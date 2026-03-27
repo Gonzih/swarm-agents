@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 import { program } from 'commander';
 import { Orchestrator } from '../src/orchestrator.js';
+import { startServer } from '../src/server.js';
 import chalk from 'chalk';
+import { exec } from 'child_process';
 
 program
   .name('swarm')
   .description('Autonomous multi-agent coding swarm')
-  .version('0.1.0')
+  .version('0.2.0')
   .argument('<repo>', 'GitHub repo URL or local path')
   .option('-n, --agents <n>', 'parallel agent count', '3')
   .option('--engine <engine>', 'coding engine: claude|aider|openai', 'claude')
@@ -17,20 +19,14 @@ program
   .option('--dry-run', 'discover tasks but do not execute', false)
   .option('--no-pr', 'commit directly without opening PRs')
   .option('--budget <usd>', 'max spend per agent per task (USD)', '5')
+  .option('--port <port>', 'UI server port', '7700')
+  .option('--no-ui', 'disable browser UI')
   .parse(process.argv);
 
 const [repo] = program.args;
 const opts = program.opts();
 
-console.log(chalk.bold.cyan('\n⬡  SWARM\n'));
-console.log(chalk.dim(`  repo     ${repo}`));
-console.log(chalk.dim(`  agents   ${opts.agents}`));
-console.log(chalk.dim(`  engine   ${opts.engine}`));
-console.log(chalk.dim(`  branch   ${opts.branch}`));
-if (opts.dryRun) console.log(chalk.yellow('  dry-run  ON'));
-console.log('');
-
-const orc = new Orchestrator({
+const config = {
   repo,
   agentCount: parseInt(opts.agents, 10),
   engine: opts.engine,
@@ -41,7 +37,29 @@ const orc = new Orchestrator({
   dryRun: opts.dryRun,
   openPRs: opts.pr !== false,
   budgetUsd: parseFloat(opts.budget),
-});
+};
+
+console.log(chalk.bold.cyan('\n⬡  SWARM\n'));
+console.log(chalk.dim(`  repo     ${repo}`));
+console.log(chalk.dim(`  agents   ${config.agentCount}`));
+console.log(chalk.dim(`  engine   ${config.engine}`));
+console.log(chalk.dim(`  branch   ${config.baseBranch}`));
+if (opts.dryRun) console.log(chalk.yellow('  dry-run  ON'));
+console.log('');
+
+// Start UI server
+if (opts.ui !== false) {
+  const port = parseInt(opts.port, 10);
+  const { url } = startServer({ port, config });
+  console.log(chalk.cyan(`  UI  →  ${url}\n`));
+  // Open browser
+  const open = process.platform === 'darwin' ? 'open'
+    : process.platform === 'win32' ? 'start'
+    : 'xdg-open';
+  setTimeout(() => exec(`${open} ${url}`), 1200);
+}
+
+const orc = new Orchestrator(config);
 
 process.on('SIGINT', async () => {
   console.log(chalk.yellow('\n\n  Draining agents...'));
